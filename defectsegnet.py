@@ -57,8 +57,11 @@ class DefectSegNet(nn.Module):
         
         self.conv13 = nn.Conv2d(int(self.convblock1.block_in_channels + 
                                    (2 * self.convblock1.out_channels) + (self.tconvblock3.out_channels / 2)), 4, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
+        
+        self.bn19 = nn.BatchNorm2d(4)
         self.act19 = nn.ReLU()
         self.conv14 = nn.Conv2d(int(self.conv13.in_channels + self.conv13.out_channels), 1, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
+        self.bn20 = nn.BatchNorm2d(1)
         self.act20 = nn.Sigmoid() 
         
     def forward(self, x):
@@ -70,7 +73,7 @@ class DefectSegNet(nn.Module):
         c9, c10, t2 = self.tconvblock2(t1, concat_channels = [p2, c5, c6])
         c11, c12, t3 = self.tconvblock3(t2, concat_channels = [p1, c3, c4])
         
-        c13 = self.act19(self.conv13(torch.cat([x, c1, c2, t3], dim = 1)))
-        c14 = self.act20(self.conv14(torch.cat([x, c1, c2, t3, c13], dim = 1)))
+        c13 = self.act19(self.bn19(self.conv13(torch.cat([x, c1, c2, t3], dim = 1))))
+        c14 = self.act20(self.bn20(self.conv14(torch.cat([x, c1, c2, t3, c13], dim = 1))))
         
         return c14
