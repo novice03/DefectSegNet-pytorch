@@ -1,83 +1,76 @@
 import torch
 import torch.nn as nn
 
+class DenseConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, transpose = None):
+        super().__init__()
+        self.block_in_channels = in_channels
+        self.out_channels = out_channels
+        self.block_out_channels = 2 * out_channels + in_channels
+        
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
+        self.bn1 = nn.BatchNorm2d(self.conv1.out_channels)
+        self.act1 = nn.ReLU()
+        
+        self.conv2 = nn.Conv2d(in_channels + out_channels, out_channels, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
+        self.bn2 = nn.BatchNorm2d(self.conv2.out_channels)
+        self.act2 = nn.ReLU()
+        
+        if transpose:
+            self.tconv = nn.ConvTranspose2d(self.block_out_channels, int(out_channels / 2), kernel_size = (2, 2), stride = (2, 2))
+            self.bn3 = nn.BatchNorm2d(self.tconv.out_channels)
+        else:
+            self.pool1 = nn.MaxPool2d(kernel_size = (2, 2), stride = (2, 2))
+            self.bn3 = nn.BatchNorm2d(self.block_out_channels)
+                    
+        self.act3 = nn.ReLU()
+    
+    def forward(self, x, concat_channels = None):
+        if concat_channels is not None:
+            c1 = self.act1(self.bn1(self.conv1(torch.cat([x, * concat_channels], dim = 1))))
+            c2 = self.act2(self.bn2(self.conv2(torch.cat([x, * concat_channels, c1], dim = 1))))
+            t1 = self.act3(self.bn3(self.tconv(torch.cat([x, * concat_channels, c1, c2], dim = 1))))
+            
+            return c1, c2, t1
+            
+        else:
+            c1 = self.act1(self.bn1(self.conv1(x)))
+            c2 = self.act2(self.bn2(self.conv2(torch.cat([x, c1], dim = 1))))
+            p1 = self.act3(self.bn3(self.pool1(torch.cat([x, c1, c2], dim = 1))))
+                    
+            return c1, c2, p1
+   
+
 class DefectSegNet(nn.Module):
-    def __init__(self):
+    def __init__(self, in_channels = 1):
         super().__init__()
         
-        self.conv1 = nn.Conv2d(1, 4, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
-        self.act1 = nn.ReLU()
-        self.conv2 = nn.Conv2d(5, 4, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
-        self.act2 = nn.ReLU()
-        self.pool1 = nn.MaxPool2d(kernel_size = (2, 2), stride = (2, 2))
-        self.act3 = nn.ReLU()
+        self.convblock1 = DenseConvBlock(in_channels = in_channels, out_channels = 4)
+        self.convblock2 = DenseConvBlock(in_channels = self.convblock1.block_out_channels, out_channels = 16)
+        self.convblock3 = DenseConvBlock(in_channels = self.convblock2.block_out_channels, out_channels = 32)
         
-        self.conv3 = nn.Conv2d(9, 16, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
-        self.act4 = nn.ReLU()
-        self.conv4 = nn.Conv2d(25, 16, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
-        self.act5 = nn.ReLU()
-        self.pool2 = nn.MaxPool2d(kernel_size = (2, 2), stride = (2, 2))
-        self.act6 = nn.ReLU()
+        self.tconvblock1 = DenseConvBlock(in_channels = self.convblock3.block_out_channels, out_channels = 64, transpose = True)
+        self.tconvblock2 = DenseConvBlock(in_channels = int(self.convblock2.block_out_channels + 
+                                                            (2 * self.convblock3.out_channels) + (self.tconvblock1.out_channels / 2)), out_channels = 32, transpose = True)
+        self.tconvblock3 = DenseConvBlock(in_channels = int(self.convblock1.block_out_channels + 
+                                                            (2 * self.convblock2.out_channels) + (self.tconvblock2.out_channels / 2)), out_channels = 16, transpose = True)
         
-        self.conv5 = nn.Conv2d(41, 32, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
-        self.act7 = nn.ReLU()
-        self.conv6 = nn.Conv2d(73, 32, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
-        self.act8 = nn.ReLU()
-        self.pool3 = nn.MaxPool2d(kernel_size = (2, 2), stride = (2, 2))
-        self.act9 = nn.ReLU()
-        
-        self.conv7 = nn.Conv2d(105, 64, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
-        self.act10 = nn.ReLU()
-        self.conv8 = nn.Conv2d(169, 64, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
-        self.act11 = nn.ReLU()
-        self.tconv1 = nn.ConvTranspose2d(233, 32, kernel_size = (2, 2), stride = (2, 2))
-        self.act12 = nn.ReLU()
-        
-        self.conv9 = nn.Conv2d(137, 32, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
-        self.act13 = nn.ReLU()
-        self.conv10 = nn.Conv2d(169, 32, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
-        self.act14 = nn.ReLU()
-        self.tconv2 = nn.ConvTranspose2d(201, 16, kernel_size = (2, 2), stride = (2, 2))
-        self.act15 = nn.ReLU()
-        
-        self.conv11 = nn.Conv2d(57, 16, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
-        self.act16 = nn.ReLU()
-        self.conv12 = nn.Conv2d(73, 16, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
-        self.act17 = nn.ReLU()
-        self.tconv3 = nn.ConvTranspose2d(89, 8, kernel_size = (2, 2), stride = (2, 2))
-        self.act18 = nn.ReLU()
-        
-        self.conv13 = nn.Conv2d(17, 4, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
+        self.conv13 = nn.Conv2d(int(self.convblock1.block_in_channels + 
+                                   (2 * self.convblock1.out_channels) + (self.tconvblock3.out_channels / 2)), 4, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
         self.act19 = nn.ReLU()
-        self.conv14 = nn.Conv2d(21, 1, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
-        self.act20 = nn.Sigmoid()       
-    
+        self.conv14 = nn.Conv2d(int(self.conv13.in_channels + self.conv13.out_channels), 1, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
+        self.act20 = nn.Sigmoid() 
+        
     def forward(self, x):
-        c1 = self.act1(self.conv1(x))
-        c2 = self.act2(self.conv2(torch.cat([x, c1], dim = 1)))
-        p1 = self.act3(self.pool1(torch.cat([x, c1, c2], dim = 1)))
+        c1, c2, p1 = self.convblock1(x)
+        c3, c4, p2 = self.convblock2(p1)
+        c5, c6, p3 = self.convblock3(p2)
         
-        c3 = self.act4(self.conv3(p1))
-        c4 = self.act5(self.conv4(torch.cat([p1, c3], dim = 1)))
-        p2 = self.act6(self.pool2(torch.cat([p1, c3, c4], dim = 1)))
-        
-        c5 = self.act7(self.conv5(p2))
-        c6 = self.act8(self.conv6(torch.cat([p2, c5], dim = 1)))
-        p3 = self.act9(self.pool3(torch.cat([p2, c5, c6], dim = 1)))
-        
-        c7 = self.act10(self.conv7(p3))
-        c8 = self.act11(self.conv8(torch.cat([p3, c7], dim = 1)))
-        t1 = self.act12(self.tconv1(torch.cat([p3, c7, c8], dim = 1)))
-        
-        c9 = self.act13(self.conv9(torch.cat([p2, c5, c6, t1], dim = 1)))
-        c10 = self.act14(self.conv10(torch.cat([p2, c5, c6, t1, c9], dim = 1)))
-        t2 = self.act15(self.tconv2(torch.cat([p2, c5, c6, t1, c9, c10], dim = 1)))
-        
-        c11 = self.act16(self.conv11(torch.cat([p1, c3, c4, t2], dim = 1)))
-        c12 = self.act17(self.conv12(torch.cat([p1, c3, c4, t2, c11], dim = 1)))
-        t3 = self.act18(self.tconv3(torch.cat([p1, c3, c4, t2, c11, c12], dim = 1)))
+        c7, c8, t1 = self.tconvblock1(p3, concat_channels = [])
+        c9, c10, t2 = self.tconvblock2(t1, concat_channels = [p2, c5, c6])
+        c11, c12, t3 = self.tconvblock3(t2, concat_channels = [p1, c3, c4])
         
         c13 = self.act19(self.conv13(torch.cat([x, c1, c2, t3], dim = 1)))
         c14 = self.act20(self.conv14(torch.cat([x, c1, c2, t3, c13], dim = 1)))
-    
+        
         return c14
